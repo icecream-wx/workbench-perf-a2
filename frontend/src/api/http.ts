@@ -6,6 +6,29 @@ export interface ApiEnvelope<T> {
   data: T;
 }
 
+export interface ApiErrorPayload {
+  code?: string;
+  message?: string;
+  fieldErrors?: Record<string, string>;
+}
+
+/** Structured API error carrying the backend status/code/fieldErrors. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  readonly code?: string;
+
+  readonly fieldErrors?: Record<string, string>;
+
+  constructor(message: string, status: number, code?: string, fieldErrors?: Record<string, string>) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.fieldErrors = fieldErrors;
+  }
+}
+
 export const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
   timeout: 15000,
@@ -15,8 +38,11 @@ http.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
     if (axios.isAxiosError(error)) {
-      const message = (error.response?.data as { message?: string } | undefined)?.message;
-      return Promise.reject(new Error(message || error.message || '网络请求失败'));
+      const payload = error.response?.data as ApiErrorPayload | undefined;
+      const status = error.response?.status ?? 0;
+      const message = payload?.message
+        || (status === 0 ? '网络请求失败，请检查网络或后端服务' : `请求失败（${status}）`);
+      return Promise.reject(new ApiError(message, status, payload?.code, payload?.fieldErrors));
     }
     return Promise.reject(error instanceof Error ? error : new Error('网络请求失败'));
   },
